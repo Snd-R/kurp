@@ -1,0 +1,51 @@
+# Komga upscaling reverse proxy
+
+Reverse proxy that intercepts page image requests and applies upscaling. Other requests are transparently proxied
+without noticable delay
+
+## Building
+
+required dependencies:
+
+- cmake
+- g++
+- vulkan loader library
+- ncnn 
+- glslang
+
+1. run `git submodule update --init --recursive` to download subprojects required for build
+2. set GLSLANG_TARGET_DIR environment variable (ubuntu: `/usr/lib/x86_64-linux-gnu/cmake/` arch linux: `/usr/lib/cmake`)
+3. run `GLSLANG_TARGET_DIR=/usr/lib/cmake cargo build --release`
+
+
+## Config
+
+Config file must be named `config.yml`
+By default config file location is set to the current directory of execution. You can override config location
+with `KURP_CONF_DIR` environment variable. If no config file is found then default values will be used.
+
+### Default config
+
+```yaml
+komga_url: "http://localhost:8080"
+upscale: true
+size_threshold_enabled: true # enables content size check
+size_threshold: 500 # in KB. will not upscale if image size is bigger than specified size
+size_threshold_png: 1000 # in KB. will not upscale if image size is bigger than specified size. PNG only
+
+# return format of the upscaled image. If the original image was png then converting for example to webp 
+# will result in significantly smaller image size
+# available options are "WebP", "Jpeg", "Png" and "Original"
+return_format: WebP
+
+waifu2x:
+  gpuid: 0 # gpu device to use (-1 = cpu). if you have single gpu then this should usually be 0
+  scale: 2 # upscale ratio (1/2/4/8/16/32)
+  noise: -1 # denoise level (-1/0/1/2/3)
+  model: Cunet # waifu2x model (Cunet, Upconv7AnimeStyleArtRgb, Upconv7Photo)
+  tile_size: 0 # tile size (>=32/0=auto)
+  tta_mode: false # enable tta mode
+  num_threads: 1 # number of threads. specifying more than 1 thread is only useful for cpu processing
+  models_path: "/path/to/models" # path to directory with models
+
+```
