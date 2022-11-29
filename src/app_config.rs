@@ -74,7 +74,7 @@ impl AppConfig {
         waifu2x_config.insert("model".to_string(), "Cunet");
         waifu2x_config.insert("tile_size".to_string(), "0");
         waifu2x_config.insert("tta_mode".to_string(), "false");
-        waifu2x_config.insert("num_threads".to_string(), "1");
+        waifu2x_config.insert("num_threads".to_string(), "2");
         waifu2x_config.insert("models_path".to_string(), models_default_dir.to_str().unwrap());
 
 

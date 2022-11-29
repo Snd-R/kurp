@@ -46,7 +46,7 @@ waifu2x:
   model: Cunet # waifu2x model (Cunet, Upconv7AnimeStyleArtRgb, Upconv7Photo)
   tile_size: 0 # tile size (>=32/0=auto)
   tta_mode: false # enable tta mode
-  num_threads: 1 # number of threads. specifying more than 1 thread is only useful for cpu processing
+  num_threads: 2 #  thread count used for upscaling
   models_path: "/path/to/models" # path to directory with models
 
 ```

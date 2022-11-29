@@ -17,7 +17,7 @@ pub async fn routes() {
         .map(move |_id, _page| (config.komga_url.clone(), "".to_string()))
         .untuple_one()
         .and(extract_request_data_filter())
-        .and_then(upscale_and_forward);
+        .and_then(proxy_upscale_and_forward);
 
     let regular_proxy = warp::any()
         .map(move || (config.komga_url.clone(), "".to_string()))
@@ -28,7 +28,7 @@ pub async fn routes() {
     warp::serve(image_upscale.or(regular_proxy)).run(([0, 0, 0, 0], config.port)).await;
 }
 
-async fn upscale_and_forward(
+async fn proxy_upscale_and_forward(
     proxy_address: String,
     base_path: String,
     uri: FullPath,
@@ -38,7 +38,7 @@ async fn upscale_and_forward(
     body: Bytes,
 ) -> Result<Response<Bytes>, Rejection> {
     let uri_str = format!("{} {}", method, uri.as_str());
-    let response = proxy_to_and_forward_response(proxy_address, base_path, uri, params, method, headers, body.clone()).await?;
+    let response = proxy_to_and_forward_response(proxy_address, base_path, uri, params, method, headers, body).await?;
     let status = response.status();
 
     info!("{}: upstream response: {}",uri_str, response.status());
@@ -47,7 +47,7 @@ async fn upscale_and_forward(
     }
 
     let content_type = response.headers().get("content-type").unwrap().to_str().unwrap();
-    let image_format = ImageFormat::from_mime_type(content_type).expect("");
+    let image_format = ImageFormat::from_mime_type(content_type).unwrap();
 
     let to_upscale = response.body().clone();
     let (upscaled, format) = task::spawn_blocking(move || {
