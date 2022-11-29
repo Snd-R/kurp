@@ -21,7 +21,7 @@ RUN apt-get update && apt-get -y install locales  \
     && apt-get -y autoremove \
     && apt-get clean
 
-COPY target/release/upscale-proxy ./
+COPY target/release/kurp ./
 
 ENTRYPOINT ["./kurp"]
 EXPOSE 3030
