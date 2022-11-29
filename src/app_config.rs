@@ -16,6 +16,7 @@ pub fn get_global_config() -> &'static AppConfig {
 #[derive(Deserialize)]
 #[allow(unused)]
 pub struct AppConfig {
+    pub port: u16,
     pub komga_url: String,
     pub upscale: bool,
     pub return_format: Format,
@@ -83,6 +84,7 @@ impl AppConfig {
         }
 
         config = config.add_source(Environment::with_prefix("kurp"))
+            .set_default("port", "3030")?
             .set_default("komga_url", "http://localhost:8080")?
             .set_default("upscale", true)?
             .set_default("return_format", "WebP")?

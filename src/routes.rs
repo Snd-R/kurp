@@ -25,7 +25,7 @@ pub async fn routes() {
         .and(extract_request_data_filter())
         .and_then(proxy_to_and_forward_response);
 
-    warp::serve(image_upscale.or(regular_proxy)).run(([0, 0, 0, 0], 3030)).await;
+    warp::serve(image_upscale.or(regular_proxy)).run(([0, 0, 0, 0], config.port)).await;
 }
 
 async fn upscale_and_forward(

@@ -27,6 +27,7 @@ with `KURP_CONF_DIR` environment variable. If no config file is found then defau
 ### Default config
 
 ```yaml
+port: 3030 # listen port
 komga_url: "http://localhost:8080"
 upscale: true
 size_threshold_enabled: true # enables content size check
