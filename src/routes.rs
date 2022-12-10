@@ -13,7 +13,7 @@ use crate::{app_config, upscaler};
 
 pub async fn routes() {
     let config = app_config::get_global_config();
-    let image_upscale = warp::path!("api"/"v1"/"books" / String /"pages"/ u8)
+    let image_upscale = warp::path!("api"/"v1"/"books" / String /"pages"/ i32)
         .map(move |_id, _page| (config.komga_url.clone(), "".to_string()))
         .untuple_one()
         .and(extract_request_data_filter())
