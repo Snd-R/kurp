@@ -1,4 +1,4 @@
-# Komga upscaling reverse proxy
+# Komga and Kavita upscaling reverse proxy
 
 Reverse proxy that intercepts page image requests and applies upscaling. Other requests are transparently proxied
 without noticable delay
