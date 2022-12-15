@@ -113,7 +113,7 @@ impl AppConfig {
         realcugan_config.insert("gpuid".to_string(), "0");
         realcugan_config.insert("scale".to_string(), "2");
         realcugan_config.insert("noise".to_string(), "-1");
-        realcugan_config.insert("model".to_string(), "Cunet");
+        realcugan_config.insert("model".to_string(), "Se");
         realcugan_config.insert("tile_size".to_string(), "0");
         realcugan_config.insert("sync_gap".to_string(), "3");
         realcugan_config.insert("tta_mode".to_string(), "false");
