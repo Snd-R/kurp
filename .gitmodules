@@ -1,3 +1,6 @@
 [submodule "waifu2x-ncnn-vulkan-rs"]
 	path = waifu2x-ncnn-vulkan-rs
 	url = https://github.com/Snd-R/waifu2x-ncnn-vulkan-rs
+[submodule "realcugan-ncnn-vulkan-rs"]
+	path = realcugan-ncnn-vulkan-rs
+	url = https://github.com/Snd-R/realcugan-ncnn-vulkan-rs

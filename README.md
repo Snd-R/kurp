@@ -28,8 +28,8 @@ with `KURP_CONF_DIR` environment variable. If no config file is found then defau
 
 ```yaml
 port: 3030 # listen port
-komga_url: "http://localhost:8080"
-upscale: true
+upstream_url: "http://localhost:8080" # Komga or Kavita url
+upscale: true # enable upscaling
 size_threshold_enabled: true # enables content size check
 size_threshold: 500 # in KB. will not upscale if image size is bigger than specified size
 size_threshold_png: 1000 # in KB. will not upscale if image size is bigger than specified size. PNG only
@@ -38,6 +38,7 @@ size_threshold_png: 1000 # in KB. will not upscale if image size is bigger than 
 # will result in significantly smaller image size
 # available options are "WebP", "Jpeg", "Png" and "Original"
 return_format: WebP
+upscaler: Waifu2x # upscaler to use (Waifu2x or Realcugan)
 
 waifu2x:
   gpuid: 0 # gpu device to use (-1 = cpu). if you have single gpu then this should usually be 0
@@ -48,5 +49,16 @@ waifu2x:
   tta_mode: false # enable tta mode
   num_threads: 2 #  thread count used for upscaling
   models_path: "/path/to/models" # path to directory with models
+  
+realcugan:
+  gpuid: 0 # gpu device to use (-1 = cpu). if you have single gpu then this should usually be 0
+  scale: 2 # upscale ratio (1/2/3/4)
+  noise: -1 # denoise level (-1/0/1/2/3)
+  model: Se # realcugan model (Se, Pro, Nose)
+  tile_size: 0 # tile size (>=32/0=auto)
+  sync_gap: 3 # sync gap mode (0/1/2/3)
+  tta_mode: false # enable tta mode
+  num_threads: 2 #  thread count for upscaling
+  models_path: "./models" # path to directory with models
 
 ```

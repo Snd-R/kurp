@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use config::{Config, ConfigError, Environment, File};
 use once_cell::sync::OnceCell;
+use realcugan_ncnn_vulkan_rs::RealCuganModelType;
 use serde_derive::Deserialize;
 use waifu2x_ncnn_vulkan_rs::ModelType;
 
@@ -17,13 +18,15 @@ pub fn get_global_config() -> &'static AppConfig {
 #[allow(unused)]
 pub struct AppConfig {
     pub port: u16,
-    pub komga_url: String,
+    pub upstream_url: String,
     pub upscale: bool,
     pub return_format: Format,
     pub size_threshold_enabled: bool,
     pub size_threshold: u32,
     pub size_threshold_png: u32,
+    pub upscaler: EnabledUpscaler,
     pub waifu2x: Waifu2xConfig,
+    pub realcugan: RealCuganConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,6 +35,12 @@ pub enum Format {
     Jpeg,
     WebP,
     Original,
+}
+
+#[derive(Debug, Deserialize)]
+pub enum EnabledUpscaler {
+    Waifu2x,
+    Realcugan,
 }
 
 #[derive(Deserialize)]
@@ -43,6 +52,14 @@ enum ModelTypeDef {
 }
 
 #[derive(Deserialize)]
+#[serde(remote = "RealCuganModelType")]
+enum RealCuganModelTypeDef {
+    Nose,
+    Pro,
+    Se,
+}
+
+#[derive(Deserialize)]
 pub struct Waifu2xConfig {
     pub gpuid: i32,
     pub scale: u32,
@@ -51,6 +68,21 @@ pub struct Waifu2xConfig {
     #[serde(with = "ModelTypeDef")]
     pub model: ModelType,
     pub tile_size: u32,
+    pub tta_mode: bool,
+    pub num_threads: i32,
+    pub models_path: String,
+}
+
+#[derive(Deserialize)]
+pub struct RealCuganConfig {
+    pub gpuid: i32,
+    pub scale: u32,
+    pub noise: i32,
+
+    #[serde(with = "RealCuganModelTypeDef")]
+    pub model: RealCuganModelType,
+    pub tile_size: u32,
+    pub sync_gap: u32,
     pub tta_mode: bool,
     pub num_threads: i32,
     pub models_path: String,
@@ -77,6 +109,17 @@ impl AppConfig {
         waifu2x_config.insert("num_threads".to_string(), "2");
         waifu2x_config.insert("models_path".to_string(), models_default_dir.to_str().unwrap());
 
+        let mut realcugan_config = config::Map::new();
+        realcugan_config.insert("gpuid".to_string(), "0");
+        realcugan_config.insert("scale".to_string(), "2");
+        realcugan_config.insert("noise".to_string(), "-1");
+        realcugan_config.insert("model".to_string(), "Cunet");
+        realcugan_config.insert("tile_size".to_string(), "0");
+        realcugan_config.insert("sync_gap".to_string(), "3");
+        realcugan_config.insert("tta_mode".to_string(), "false");
+        realcugan_config.insert("num_threads".to_string(), "2");
+        realcugan_config.insert("models_path".to_string(), models_default_dir.to_str().unwrap());
+
 
         let mut config = Config::builder();
         if config_dir.join("config.yml").exists() {
@@ -85,13 +128,15 @@ impl AppConfig {
 
         config = config.add_source(Environment::with_prefix("kurp"))
             .set_default("port", "3030")?
-            .set_default("komga_url", "http://localhost:8080")?
+            .set_default("upstream_url", "http://localhost:8080")?
             .set_default("upscale", true)?
             .set_default("return_format", "WebP")?
             .set_default("size_threshold_enabled", "true")?
             .set_default("size_threshold", "500")?
             .set_default("size_threshold_png", "1000")?
-            .set_default("waifu2x", waifu2x_config)?;
+            .set_default("waifu2x", waifu2x_config)?
+            .set_default("realcugan", realcugan_config)?
+            .set_default("upscaler", "Waifu2x")?;
 
         config.build()?.try_deserialize()
     }
