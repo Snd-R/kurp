@@ -18,8 +18,7 @@ pub async fn routes() {
         .map(move |_id, _page| (config.upstream_url.clone(), "".to_string()))
         .untuple_one()
         .and(extract_request_data_filter())
-        .and_then(proxy_upscale_and_forward)
-        .with(warp::compression::brotli());
+        .and_then(proxy_upscale_and_forward);
 
     let kavita_upscale = warp::path!("api"/"reader"/"image")
         .map(|| (config.upstream_url.clone(), "".to_string()))
@@ -50,6 +49,7 @@ async fn proxy_upscale_and_forward(
     body: Bytes,
 ) -> Result<Response<Bytes>, Rejection> {
     let uri_str = format!("{} {}", method, uri.as_str());
+    // TODO do not request compressed data to avoid decode and re-encode
     let response = proxy_to_and_forward_response(proxy_address, base_path, uri, params, method, headers, body).await?;
     let status = response.status();
 
