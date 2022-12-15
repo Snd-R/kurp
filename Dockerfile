@@ -17,7 +17,10 @@ RUN apt-get update && apt-get -y install locales  \
     && rm -rf ncnn.zip \
     && git clone https://github.com/nihui/waifu2x-ncnn-vulkan \
     && mv waifu2x-ncnn-vulkan/models . \
+    && git clone https://github.com/nihui/realcugan-ncnn-vulkan \
+    && mv realcugan-ncnn-vulkan/models/* ./models \
     && rm -rf waifu2x-ncnn-vulkan \
+    && rm -rf realcugan-ncnn-vulkan \
     && apt-get -y autoremove \
     && apt-get clean
 
