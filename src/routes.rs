@@ -5,7 +5,8 @@ use tokio::task;
 use unicase::Ascii;
 use warp::{Filter, http, Rejection};
 use warp::http::{HeaderMap, HeaderValue, Response};
-use warp::hyper::Method;
+use warp::hyper::{body, StatusCode};
+use warp::hyper::{Body, Method};
 use warp::path::FullPath;
 use warp_reverse_proxy::{errors, extract_request_data_filter, proxy_to_and_forward_response, QueryParameters};
 
@@ -47,7 +48,7 @@ async fn proxy_upscale_and_forward(
     method: Method,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<Response<Bytes>, Rejection> {
+) -> Result<Response<Body>, Rejection> {
     let uri_str = format!("{} {}", method, uri.as_str());
     // TODO do not request compressed data to avoid decode and re-encode
     let response = proxy_to_and_forward_response(proxy_address, base_path, uri, params, method, headers, body).await?;
@@ -58,20 +59,22 @@ async fn proxy_upscale_and_forward(
         return Ok(response);
     }
 
-    let mut content_type = response.headers().get("content-type").unwrap().to_str().unwrap();
+    let headers = response.headers().clone();
+    let mut content_type = headers.get("content-type").unwrap().to_str().unwrap();
     if content_type == "image/jpg" {
         content_type = "image/jpeg"
     }
     let image_format = ImageFormat::from_mime_type(content_type).unwrap();
 
-    let encoding = response.headers().get("content-encoding");
-    let body_to_decompress = response.body().clone();
+    let encoding = headers.get("content-encoding");
+    let response_bytes = body::to_bytes(response).await.unwrap();
+
     let decompressed = encoding
         .map(unwrap_encoding_header)
-        .map(|algo| http_compression::decompress(body_to_decompress, algo));
+        .map(|algo| http_compression::decompress(response_bytes.clone(), algo));
 
     let to_upscale = match decompressed {
-        None => response.body().clone(),
+        None => response_bytes,
         Some(decompressed) => decompressed.await.unwrap()
     };
 
@@ -90,15 +93,16 @@ async fn proxy_upscale_and_forward(
     };
 
     info!("{} finished upscaling", uri_str);
-    response_to_upscaled_reply(response, response_body, format).await
+    response_to_upscaled_reply(status, response_body, &headers, format).await
         .map_err(warp::reject::custom)
 }
 
 async fn response_to_upscaled_reply(
-    response: Response<Bytes>,
+    status: StatusCode,
     bytes: Bytes,
+    headers: &HeaderMap<HeaderValue>,
     format: ImageFormat,
-) -> Result<Response<Bytes>, errors::Error> {
+) -> Result<Response<Body>, errors::Error> {
     let mime_type = match format {
         ImageFormat::Png => { Some("image/png") }
         ImageFormat::Jpeg => { Some("image/jpeg") }
@@ -106,7 +110,7 @@ async fn response_to_upscaled_reply(
         _ => { None }
     };
     let mut builder = http::Response::builder();
-    for (k, v) in response.headers() {
+    for (k, v) in headers {
         if Ascii::new("Content-Length") == k {
             builder = builder.header("Content-Length", bytes.len())
         } else if Ascii::new("Content-Type") == k && mime_type.is_some() {
@@ -116,9 +120,9 @@ async fn response_to_upscaled_reply(
         }
     }
     builder
-        .status(response.status())
-        .body(bytes)
-        .map_err(errors::Error::HTTP)
+        .status(status)
+        .body(Body::from(bytes))
+        .map_err(errors::Error::Http)
 }
 
 fn unwrap_encoding_header(encoding: &HeaderValue) -> Algorithm {
