@@ -3,18 +3,11 @@ use std::fs;
 use std::path::PathBuf;
 
 use config::{Config, ConfigError, Environment, File};
-use once_cell::sync::OnceCell;
 use realcugan_ncnn_vulkan_rs::RealCuganModelType;
-use serde_derive::Deserialize;
+use serde_derive::{Deserialize, Serialize};
 use waifu2x_ncnn_vulkan_rs::ModelType;
 
-pub static CONFIG: OnceCell<AppConfig> = OnceCell::new();
-
-pub fn get_global_config() -> &'static AppConfig {
-    CONFIG.get_or_init(|| AppConfig::new().unwrap())
-}
-
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[allow(unused)]
 pub struct AppConfig {
     pub port: u16,
@@ -29,7 +22,7 @@ pub struct AppConfig {
     pub realcugan: RealCuganConfig,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub enum Format {
     Png,
     Jpeg,
@@ -37,13 +30,13 @@ pub enum Format {
     Original,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum EnabledUpscaler {
     Waifu2x,
     Realcugan,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(remote = "ModelType")]
 enum ModelTypeDef {
     Cunet,
@@ -51,7 +44,7 @@ enum ModelTypeDef {
     Upconv7Photo,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(remote = "RealCuganModelType")]
 enum RealCuganModelTypeDef {
     Nose,
@@ -59,7 +52,7 @@ enum RealCuganModelTypeDef {
     Se,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Waifu2xConfig {
     pub gpuid: i32,
     pub scale: u32,
@@ -73,7 +66,7 @@ pub struct Waifu2xConfig {
     pub models_path: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RealCuganConfig {
     pub gpuid: i32,
     pub scale: u32,
@@ -90,15 +83,9 @@ pub struct RealCuganConfig {
 
 impl AppConfig {
     pub fn new() -> Result<Self, ConfigError> {
-        let current_dir = env::current_dir().expect("can't read current dir");
-        let dir_env = env::var("KURP_CONF_DIR");
-        let config_dir: PathBuf = dir_env.map(|path| { PathBuf::from(path) })
-            .unwrap_or_else(|_| { current_dir.clone() });
+        let config_dir = AppConfig::get_config_directory();
 
-        fs::create_dir_all(&config_dir).expect("can't create config directory");
-
-
-        let models_default_dir = current_dir.join("models");
+        let models_default_dir = config_dir.join("models");
         let mut waifu2x_config = config::Map::new();
         waifu2x_config.insert("gpuid".to_string(), "0");
         waifu2x_config.insert("scale".to_string(), "2");
@@ -139,5 +126,22 @@ impl AppConfig {
             .set_default("upscaler", "Waifu2x")?;
 
         config.build()?.try_deserialize()
+    }
+
+    pub fn write_config(config: AppConfig) {
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        let config_path = AppConfig::get_config_directory().join("config.yml");
+        fs::write(config_path, yaml).expect("Unable to write file");
+    }
+
+    fn get_config_directory() -> PathBuf {
+        let current_dir = env::current_dir().expect("can't read current dir");
+        let dir_env = env::var("KURP_CONF_DIR");
+        let config_dir: PathBuf = dir_env.map(|path| { PathBuf::from(path) })
+            .unwrap_or_else(|_| { current_dir.clone() });
+
+        fs::create_dir_all(&config_dir).expect("can't create config directory");
+
+        config_dir
     }
 }

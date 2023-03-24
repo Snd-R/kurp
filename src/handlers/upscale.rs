@@ -1,51 +1,26 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use bytes::Bytes;
 use image::ImageFormat;
 use log::info;
 use regex::Regex;
-use tokio::task;
 use unicase::Ascii;
-use warp::{Filter, http, Rejection};
+use warp::{http, Rejection};
 use warp::http::{HeaderMap, HeaderValue, Response};
 use warp::hyper::{body, StatusCode};
 use warp::hyper::{Body, Method};
 use warp::path::FullPath;
-use warp_reverse_proxy::{errors, extract_request_data_filter, proxy_to_and_forward_response, QueryParameters};
+use warp_reverse_proxy::{errors, proxy_to_and_forward_response, QueryParameters};
 
-use crate::{app_config, http_compression, upscaler};
+use crate::config::app_config::AppConfig;
+use crate::http_compression;
 use crate::http_compression::{Algorithm, compress};
+use crate::upscaler::upscale_actor::UpscaleActorHandle;
 
-pub async fn routes() {
-    let config = app_config::get_global_config();
-    let komga_upscale = warp::path!("api"/"v1"/"books" / String /"pages"/ i32)
-        .map(move |_id, _page| (config.upstream_url.clone(), "".to_string()))
-        .untuple_one()
-        .and(extract_request_data_filter())
-        .and_then(proxy_upscale_and_forward);
-
-    let kavita_upscale = warp::path!("api"/"reader"/"image")
-        .map(|| (config.upstream_url.clone(), "".to_string()))
-        .untuple_one()
-        .and(extract_request_data_filter())
-        .and_then(proxy_upscale_and_forward);
-
-    let regular_proxy = warp::any()
-        .map(move || (config.upstream_url.clone(), "".to_string()))
-        .untuple_one()
-        .and(extract_request_data_filter())
-        .and_then(proxy_to_and_forward_response);
-
-    warp::serve(
-        komga_upscale
-            .or(kavita_upscale)
-            .or(regular_proxy)
-    ).run(([0, 0, 0, 0], config.port)).await;
-}
-
-async fn proxy_upscale_and_forward(
-    proxy_address: String,
-    base_path: String,
+pub async fn upscale(
+    config: Arc<AppConfig>,
+    upscaler: UpscaleActorHandle,
     uri: FullPath,
     params: QueryParameters,
     method: Method,
@@ -54,7 +29,11 @@ async fn proxy_upscale_and_forward(
 ) -> Result<Response<Body>, Rejection> {
     let uri_str = format!("{} {}{}", method, uri.as_str(), params.as_deref().map(|query| "?".to_string() + query).unwrap_or_default());
     // TODO do not request compressed data to avoid decode and re-encode
-    let response = proxy_to_and_forward_response(proxy_address, base_path, uri, params, method, headers, body).await?;
+    let response = proxy_to_and_forward_response(
+        config.upstream_url.clone(), "".to_string(),
+        uri, params,
+        method, headers, body,
+    ).await?;
     let status = response.status();
 
     info!("{}: upstream response: {}",uri_str, response.status());
@@ -81,9 +60,7 @@ async fn proxy_upscale_and_forward(
         Some(decompressed) => decompressed.await.unwrap()
     };
 
-    let (upscaled, format) = task::spawn_blocking(move || {
-        upscaler::UPSCALER.upscale(to_upscale, image_format)
-    }).await.unwrap();
+    let (upscaled, format) = upscaler.upscale(to_upscale, image_format).await.unwrap();
 
     let body_to_compress = upscaled.clone();
     let compressed = encoding
@@ -96,11 +73,11 @@ async fn proxy_upscale_and_forward(
     };
 
     info!("{} finished upscaling", uri_str);
-    response_to_upscaled_reply(status, response_body, &headers, format).await
+    to_response(status, response_body, &headers, format).await
         .map_err(warp::reject::custom)
 }
 
-async fn response_to_upscaled_reply(
+async fn to_response(
     status: StatusCode,
     bytes: Bytes,
     headers: &HeaderMap<HeaderValue>,
@@ -156,3 +133,4 @@ fn unwrap_encoding_header(encoding: &HeaderValue) -> Algorithm {
         _ => panic!("unsupported compression algorithm")
     }
 }
+
