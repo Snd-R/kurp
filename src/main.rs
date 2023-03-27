@@ -1,6 +1,8 @@
 #![feature(result_option_inspect)]
 
+use std::str::FromStr;
 use std::sync::Arc;
+use hyper::Uri;
 
 use log::LevelFilter;
 use moka::future::Cache;
@@ -13,6 +15,7 @@ use crate::app_state::AppState;
 use crate::clients::kavita_client::KavitaClient;
 use crate::clients::komga_client::KomgaClient;
 use crate::clients::proxy_client::ProxyClient;
+use crate::clients::websocket_proxy_client::WebsocketProxyClient;
 use crate::config::app_config::{AppConfig, EnabledUpscaler};
 use crate::config::app_config::EnabledUpscaler::Waifu2x;
 use crate::tags_provider::UpscaleTagChecker;
@@ -57,9 +60,10 @@ async fn main() {
             .expect("Reqwest client couldn't build");
 
 
-        let upstream_url = config.upstream_url.clone();
-        let komga_client = Arc::new(KomgaClient::new(reqwest_client.clone(), upstream_url.clone()));
-        let kavita_client = Arc::new(KavitaClient::new(reqwest_client.clone(), upstream_url.clone()));
+        let upstream_url = Uri::from_str(config.upstream_url.as_str()).unwrap();
+        let upstream_url_str = upstream_url.to_string().strip_suffix("/").unwrap().to_string();
+        let komga_client = Arc::new(KomgaClient::new(reqwest_client.clone(), upstream_url_str.clone()));
+        let kavita_client = Arc::new(KavitaClient::new(reqwest_client.clone(), upstream_url_str.clone()));
 
         let tag_provider = Arc::new(UpscaleTagChecker::new(
             config.upscale_tag.clone(),
@@ -68,11 +72,20 @@ async fn main() {
         ));
 
         let upscale_call_cache = Cache::new(1_000);
+        let proxy_client = ProxyClient::new(reqwest_client, upstream_url_str);
+        let ws_url = Uri::builder()
+            .scheme("ws")
+            .authority(upstream_url.authority().unwrap().as_str())
+            .path_and_query(upstream_url.path())
+            .build().unwrap();
+        let ws_url_str = ws_url.to_string().strip_suffix("/").unwrap().to_string();
+        let websocket_proxy_client = WebsocketProxyClient::new(ws_url_str);
 
         let state = AppState {
             config,
             upscaler: upscale_actor.clone(),
-            proxy_client: Arc::new(ProxyClient::new(reqwest_client, upstream_url)),
+            proxy_client: Arc::new(proxy_client),
+            websocket_proxy_client: Arc::new(websocket_proxy_client),
             upscale_call_history_cache: Arc::new(upscale_call_cache),
             upscale_tag_checker: tag_provider,
             shutdown_tx: tx,

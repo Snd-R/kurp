@@ -14,7 +14,7 @@ impl KomgaClient {
     }
 
     pub async fn get_book(&self, book_id: &str, cookie: &str) -> Result<KomgaBook, HttpError> {
-        let result = self.client.get(format!("{}/api/v1/books/{}", &self.base_uri, book_id))
+        let result = self.client.get(format!("{}api/v1/books/{}", &self.base_uri, book_id))
             .header("Cookie", cookie)
             .send().await
             .map_err(|err| HttpError { message: err.to_string() })?;
@@ -29,7 +29,7 @@ impl KomgaClient {
         Ok(json)
     }
     pub async fn get_series(&self, series_id: &str, cookie: &str) -> Result<KomgaSeries, HttpError> {
-        let result = self.client.get(format!("{}/api/v1/series/{}", &self.base_uri, series_id))
+        let result = self.client.get(format!("{}api/v1/series/{}", &self.base_uri, series_id))
             .header("cookie", cookie)
             .send().await
             .map_err(|err| HttpError { message: err.to_string() })?;
