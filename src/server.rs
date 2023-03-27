@@ -1,42 +1,51 @@
-use std::sync::Arc;
+use std::net::SocketAddr;
 use std::time::Duration;
 
-use futures::future::select_all;
+use axum::Router;
+use axum::routing::{any, get, post};
 use futures::FutureExt;
 use log::info;
-use tokio::sync::broadcast;
+use tokio::sync::broadcast::Receiver;
 use tokio::time::sleep;
-use warp::Filter;
 
-use crate::config::app_config::AppConfig;
-use crate::handlers::errors::handle_rejection;
-use crate::routes::config::config_routes;
-use crate::routes::proxy::proxy_route;
-use crate::routes::upscale::upscale_routes;
-use crate::upscaler::upscale_actor::UpscaleActorHandle;
+use crate::app_state::AppState;
+use crate::handlers::config::{get_config, update_config};
+use crate::handlers::proxy::proxy_route;
+use crate::handlers::upscale::{upscale_kavita, upscale_komga};
 
-pub async fn start(
-    config: Arc<AppConfig>,
-    upscaler: UpscaleActorHandle,
-) {
-    let (tx, mut graceful_shutdown_rx) = broadcast::channel::<bool>(10);
-    let shutdown_tx = Arc::new(tx);
-    let mut force_shutdown_rx = shutdown_tx.subscribe();
+pub async fn start(state: AppState, mut shutdown_rx: Receiver<()>) {
+    let config = state.config.clone();
+    let mut force_shutdown_rx = state.shutdown_tx.subscribe();
 
-    let api = config_routes(shutdown_tx, config.clone())
-        .or(upscale_routes(config.clone(), upscaler.clone()))
-        .recover(handle_rejection)
-        .or(proxy_route(config.clone()));
+    let routes = make_routes(state);
 
-    let (addr, server) = warp::serve(api)
-        .bind_with_graceful_shutdown(([0, 0, 0, 0], config.port),
-                                     async move { graceful_shutdown_rx.recv().await.unwrap(); });
+    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
+    let server = axum::Server::bind(&addr)
+        .serve(routes.into_make_service())
+        .with_graceful_shutdown(async move { shutdown_rx.recv().await.unwrap() });
 
-    // FIXME existing connections will not be closed
     let force_shutdown = force_shutdown_rx.recv()
-        .then(|_| async move { sleep(Duration::from_secs(1)).await; })
-        .boxed();
-    info!( "listening on http://{}", addr);
+        .then(|_| async { sleep(Duration::from_secs(1)).await; });
 
-    select_all(vec![server.boxed(), force_shutdown]).await;
+    tokio::select! {
+        _ = server => { info!("Graceful server shutdown") }
+        _ = force_shutdown  => { info!("Forced server shutdown") }
+    }
+}
+
+fn make_routes(state: AppState) -> Router {
+    let config = state.config.clone();
+
+    let mut routes = Router::new()
+        .route("/api/v1/books/:book_id/pages/:page_number", get(upscale_komga))
+        .route("/api/reader/image", get(upscale_kavita))
+        .route("/", any(proxy_route))
+        .route("/*any", any(proxy_route));
+
+    if config.allow_config_updates {
+        routes = routes
+            .route("/kurp/config", get(get_config))
+            .route("/kurp/config", post(update_config));
+    }
+    routes.with_state(state)
 }

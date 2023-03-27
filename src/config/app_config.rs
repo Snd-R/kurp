@@ -7,7 +7,7 @@ use realcugan_ncnn_vulkan_rs::RealCuganModelType;
 use serde_derive::{Deserialize, Serialize};
 use waifu2x_ncnn_vulkan_rs::ModelType;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[allow(unused)]
 pub struct AppConfig {
     pub port: u16,
@@ -20,6 +20,8 @@ pub struct AppConfig {
     pub upscaler: EnabledUpscaler,
     pub waifu2x: Waifu2xConfig,
     pub realcugan: RealCuganConfig,
+    pub upscale_tag: Option<String>,
+    pub allow_config_updates: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
@@ -30,13 +32,13 @@ pub enum Format {
     Original,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum EnabledUpscaler {
     Waifu2x,
     Realcugan,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(remote = "ModelType")]
 enum ModelTypeDef {
     Cunet,
@@ -44,7 +46,7 @@ enum ModelTypeDef {
     Upconv7Photo,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(remote = "RealCuganModelType")]
 enum RealCuganModelTypeDef {
     Nose,
@@ -52,7 +54,7 @@ enum RealCuganModelTypeDef {
     Se,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Waifu2xConfig {
     pub gpuid: i32,
     pub scale: u32,
@@ -66,7 +68,7 @@ pub struct Waifu2xConfig {
     pub models_path: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct RealCuganConfig {
     pub gpuid: i32,
     pub scale: u32,
@@ -123,7 +125,8 @@ impl AppConfig {
             .set_default("size_threshold_png", "1000")?
             .set_default("waifu2x", waifu2x_config)?
             .set_default("realcugan", realcugan_config)?
-            .set_default("upscaler", "Waifu2x")?;
+            .set_default("upscaler", "Waifu2x")?
+            .set_default("allow_config_updates", false)?;
 
         config.build()?.try_deserialize()
     }

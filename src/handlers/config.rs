@@ -1,18 +1,25 @@
-use std::convert::Infallible;
 use std::ops::Deref;
-use std::sync::Arc;
 
-use tokio::sync::broadcast::Sender;
+use axum::extract::State;
+use axum::Json;
+use axum::response::IntoResponse;
+use hyper::StatusCode;
 
+use crate::app_state::AppState;
 use crate::config::app_config::AppConfig;
 
-pub async fn update_config(tx: Arc<Sender<bool>>, new_config: AppConfig) -> Result<impl warp::Reply, Infallible> {
+pub async fn update_config(
+    State(state): State<AppState>,
+    Json(new_config): Json<AppConfig>,
+) -> impl IntoResponse {
     AppConfig::write_config(new_config);
-    tx.send(true).unwrap();
+    state.shutdown_tx.send(()).unwrap();
 
-    Ok(warp::reply())
+    StatusCode::OK
 }
 
-pub async fn get_config(config: Arc<AppConfig>) -> Result<impl warp::Reply, Infallible> {
-    Ok(warp::reply::json(config.deref()))
+pub async fn get_config(
+    State(state): State<AppState>
+) -> impl IntoResponse {
+    Json(state.config.deref().clone())
 }

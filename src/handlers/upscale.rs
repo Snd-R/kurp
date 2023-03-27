@@ -1,46 +1,90 @@
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::extract::State;
+use axum::http::{HeaderMap, HeaderValue, Request, Response, StatusCode};
 use bytes::Bytes;
+use hyper::Body;
+use hyper::body::to_bytes;
 use image::ImageFormat;
 use log::info;
+use moka::future::Cache;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use unicase::Ascii;
-use warp::{http, Rejection};
-use warp::http::{HeaderMap, HeaderValue, Response};
-use warp::hyper::{body, StatusCode};
-use warp::hyper::{Body, Method};
-use warp::path::FullPath;
-use warp_reverse_proxy::{errors, proxy_to_and_forward_response, QueryParameters};
 
-use crate::config::app_config::AppConfig;
+use crate::app_state::AppState;
 use crate::http_compression;
 use crate::http_compression::{Algorithm, compress};
+use crate::models::errors::HttpError;
 use crate::upscaler::upscale_actor::UpscaleActorHandle;
 
-pub async fn upscale(
-    config: Arc<AppConfig>,
-    upscaler: UpscaleActorHandle,
-    uri: FullPath,
-    params: QueryParameters,
-    method: Method,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Response<Body>, Rejection> {
-    let uri_str = format!("{} {}{}", method, uri.as_str(), params.as_deref().map(|query| "?".to_string() + query).unwrap_or_default());
-    // TODO do not request compressed data to avoid decode and re-encode
-    let response = proxy_to_and_forward_response(
-        config.upstream_url.clone(), "".to_string(),
-        uri, params,
-        method, headers, body,
-    ).await?;
-    let status = response.status();
+pub async fn upscale_komga(
+    State(state): State<AppState>,
+    req: Request<Body>,
+) -> Result<Response<Body>, StatusCode> {
+    let uri = req.uri().clone();
+    let tag_checker = state.upscale_tag_checker.clone();
+    let cookie = req.headers().get("Cookie")
+        .ok_or(StatusCode::BAD_REQUEST)?
+        .clone();
 
+    let upscale_condition = || async {
+        let book_id = uri.path().split("/").collect::<Vec<&str>>().windows(2)
+            .find(|path| path[0] == "books")
+            .map(|path| path[1])
+            .unwrap();
+        tag_checker.komga_contains_upscale_tag(book_id, cookie.to_str().unwrap()).await
+    };
+
+    upscale(state, req, upscale_condition).await
+}
+
+pub async fn upscale_kavita(
+    State(state): State<AppState>,
+    req: Request<Body>,
+) -> Result<Response<Body>, StatusCode> {
+    upscale(state, req, || async { Ok(true) }).await
+}
+
+pub async fn upscale<F, Fut>(
+    state: AppState,
+    request: Request<Body>,
+    upscale_condition: F,
+) -> Result<Response<Body>, StatusCode>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output=Result<bool, HttpError>>
+{
+    let request = to_proxy_request(state.upscale_call_history_cache.clone(), request);
+    let request_path = request.uri().path_and_query()
+        .map(|path| path.to_string())
+        .unwrap_or("/".to_string());
+
+    let uri_str = format!("{} {}", request.method().as_str(), request.uri().path());
+
+    let response = state.proxy_client.proxy_request(request).await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
     info!("{}: upstream response: {}",uri_str, response.status());
-    if status == 304 || !status.is_success() {
+
+    if response.status() == 304 || !response.status().is_success() {
         return Ok(response);
     }
+    let should_upscale = upscale_condition().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    if !should_upscale { return Ok(response); }
 
+    let upscaled = upscale_response(response, state.upscaler).await;
+    info!("{} finished upscaling", uri_str);
+    state.upscale_call_history_cache.insert(request_path, ()).await;
+    Ok(upscaled)
+}
+
+async fn upscale_response(
+    response: Response<Body>,
+    upscaler: UpscaleActorHandle,
+) -> Response<Body> {
+    let status = response.status();
     let headers = response.headers().clone();
     let mut content_type = headers.get("content-type").unwrap().to_str().unwrap();
     if content_type == "image/jpg" {
@@ -49,7 +93,7 @@ pub async fn upscale(
     let image_format = ImageFormat::from_mime_type(content_type).unwrap();
 
     let encoding = headers.get("content-encoding");
-    let response_bytes = body::to_bytes(response).await.unwrap();
+    let response_bytes = to_bytes(response).await.unwrap();
 
     let decompressed = encoding
         .map(unwrap_encoding_header)
@@ -72,24 +116,22 @@ pub async fn upscale(
         Some(compressed) => compressed.await.unwrap()
     };
 
-    info!("{} finished upscaling", uri_str);
-    to_response(status, response_body, &headers, format).await
-        .map_err(warp::reject::custom)
+    to_response(status, response_body, &headers, format)
 }
 
-async fn to_response(
+fn to_response(
     status: StatusCode,
     bytes: Bytes,
     headers: &HeaderMap<HeaderValue>,
     format: ImageFormat,
-) -> Result<Response<Body>, errors::Error> {
+) -> Response<Body> {
     let mime_type = match format {
         ImageFormat::Png => { Some(("image/png", "png")) }
         ImageFormat::Jpeg => { Some(("image/jpeg", "jpeg")) }
         ImageFormat::WebP => { Some(("image/webp", "webp")) }
         _ => { None }
     };
-    let mut builder = http::Response::builder();
+    let mut builder = Response::builder();
     for (k, v) in headers {
         if Ascii::new("Content-Length") == k {
             builder = builder.header("Content-Length", bytes.len())
@@ -111,7 +153,7 @@ async fn to_response(
     builder
         .status(status)
         .body(Body::from(bytes))
-        .map_err(errors::Error::Http)
+        .unwrap()
 }
 
 fn with_new_file_extension(name: &str, extension: &str) -> String {
@@ -134,3 +176,53 @@ fn unwrap_encoding_header(encoding: &HeaderValue) -> Algorithm {
     }
 }
 
+fn to_proxy_request(
+    call_cache: Arc<Cache<String, ()>>,
+    req: Request<Body>,
+) -> Request<Body> {
+    let request_path = req.uri().path_and_query()
+        .map(|path| path.to_string())
+        .unwrap_or("/".to_string());
+
+    let (parts, body) = req.into_parts();
+
+    let headers = remove_uncached_conditional_headers(
+        parts.headers,
+        call_cache.clone(),
+        request_path,
+    );
+
+    let mut builder = Request::builder()
+        .method(parts.method)
+        .uri(parts.uri)
+        .version(parts.version)
+        .extension(parts.extensions);
+    builder.headers_mut().unwrap().extend(headers);
+
+    builder.body(body).unwrap()
+}
+
+fn is_conditional_header(header_name: &str) -> bool {
+    static CONDITIONAL_HEADERS: Lazy<Vec<Ascii<&'static str>>> = Lazy::new(|| {
+        vec![Ascii::new("If-Modified-Since"), Ascii::new("If-None-Match")]
+    });
+    CONDITIONAL_HEADERS.iter().any(|h| h == &header_name)
+}
+
+fn remove_uncached_conditional_headers(
+    headers: HeaderMap<HeaderValue>,
+    call_cache: Arc<Cache<String, ()>>,
+    request_path: String,
+) -> HeaderMap<HeaderValue> {
+    if call_cache.get(&request_path).is_some() {
+        return headers;
+    }
+
+    headers.iter()
+        .filter_map(|(k, v)|
+            if is_conditional_header(k.as_str()) {
+                None
+            } else {
+                Some((k.clone(), v.clone()))
+            }).collect()
+}
