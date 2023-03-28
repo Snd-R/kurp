@@ -50,7 +50,7 @@ waifu2x:
   tile_size: 0 # tile size (>=32/0=auto)
   tta_mode: false # enable tta mode
   num_threads: 2 #  thread count used for upscaling
-  models_path: "/path/to/models" # path to directory with models
+  models_path: "./models" # path to directory with models
   
 realcugan:
   gpuid: 0 # gpu device to use (-1 = cpu). if you have single gpu then this should usually be 0
