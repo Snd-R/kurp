@@ -18,7 +18,7 @@ impl KomgaClient {
             .header("Cookie", cookie)
             .send().await
             .map_err(|err| HttpError { message: err.to_string() })?;
-        debug!("GET {} {}", result.url(), result.status());
+        info!("GET {} {}", result.url(), result.status());
         if !result.status().is_success() {
             return Err(HttpError { message: format!("{}, {}", result.status(), result.url()) });
         }
@@ -34,7 +34,7 @@ impl KomgaClient {
             .send().await
             .map_err(|err| HttpError { message: err.to_string() })?;
 
-        debug!("GET {} {}", result.url(), result.status());
+        info!("GET {} {}", result.url(), result.status());
         if !result.status().is_success() {
             return Err(HttpError { message: format!("{}, {}", result.status(), result.url()) });
         }

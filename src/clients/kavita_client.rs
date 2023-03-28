@@ -1,7 +1,7 @@
 use log::info;
 
 use crate::models::errors::HttpError;
-use crate::models::kavita::{KavitaChapter, KavitaVolume};
+use crate::models::kavita::{KavitaChapter, KavitaSeriesMetadata, KavitaVolume};
 
 pub struct KavitaClient {
     client: reqwest::Client,
@@ -13,10 +13,10 @@ impl KavitaClient {
         Self { client, base_uri }
     }
 
-    pub async fn get_chapter(&self, chapter_id: &str, cookie: &str) -> Result<KavitaChapter, HttpError> {
-        let result = self.client.get("/api/series/chapter/")
+    pub async fn get_chapter(&self, chapter_id: &u32, auth: &str) -> Result<KavitaChapter, HttpError> {
+        let result = self.client.get(format!("{}/api/series/chapter", self.base_uri))
             .query(&[("chapterId", chapter_id)])
-            .header("cookie", cookie)
+            .header("Authorization", auth)
             .send().await
             .map_err(|err| HttpError { message: err.to_string() })?;
 
@@ -31,10 +31,10 @@ impl KavitaClient {
         Ok(json)
     }
 
-    pub async fn get_volume(&self, volume_id: &str, cookie: &str) -> Result<KavitaVolume, HttpError> {
-        let result = self.client.get("/api/series/volume")
+    pub async fn get_volume(&self, volume_id: &u32, auth: &str) -> Result<KavitaVolume, HttpError> {
+        let result = self.client.get(format!("{}/api/series/volume", self.base_uri))
             .query(&[("volumeId", volume_id)])
-            .header("cookie", cookie)
+            .header("Authorization", auth)
             .send().await
             .map_err(|err| HttpError { message: err.to_string() })?;
 
@@ -49,10 +49,10 @@ impl KavitaClient {
         Ok(json)
     }
 
-    pub async fn get_series_metadata(&self, series_id: &str, cookie: &str) -> Result<KavitaVolume, HttpError> {
-        let result = self.client.get("/api/series/metadata")
+    pub async fn get_series_metadata(&self, series_id: &u32, auth: &str) -> Result<KavitaSeriesMetadata, HttpError> {
+        let result = self.client.get(format!("{}/api/series/metadata", self.base_uri))
             .query(&[("seriesId", series_id)])
-            .header("cookie", cookie)
+            .header("Authorization", auth)
             .send().await
             .map_err(|err| HttpError { message: err.to_string() })?;
 
@@ -61,7 +61,7 @@ impl KavitaClient {
             return Err(HttpError { message: format!("{}, {}", result.status(), result.url()) });
         }
 
-        let json = result.json::<KavitaVolume>().await
+        let json = result.json::<KavitaSeriesMetadata>().await
             .map_err(|err| HttpError { message: err.to_string() })?;
 
         Ok(json)

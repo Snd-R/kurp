@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moka::future::Cache;
+use unicase::Ascii;
 
 use crate::clients::kavita_client::KavitaClient;
 use crate::clients::komga_client::KomgaClient;
@@ -23,12 +24,12 @@ impl UpscaleTagChecker {
         Self { upscale_tag, komga, kavita, cache }
     }
 
-    pub async fn kavita_contains_upscale_tag(&self, book_id: &str, cookie: &str) -> Result<bool, HttpError> {
+    pub async fn kavita_contains_upscale_tag(&self, book_id: &u32, auth: &str) -> Result<bool, HttpError> {
         match &self.upscale_tag {
             None => Ok(false),
             Some(upscale_tag) => {
-                match self.cache.get(book_id) {
-                    None => Ok(self.check_kavita_tags(upscale_tag, book_id, cookie).await?),
+                match self.cache.get(&book_id.to_string()) {
+                    None => Ok(self.check_kavita_tags(upscale_tag, book_id, auth).await?),
                     Some(contains) => Ok(contains)
                 }
             }
@@ -48,19 +49,28 @@ impl UpscaleTagChecker {
     }
 
     async fn check_komga_tags(&self, upscale_tag: &String, book_id: &str, cookie: &str) -> Result<bool, HttpError> {
+        let upscale_tag = Ascii::new(upscale_tag);
         let book = self.komga.get_book(book_id, cookie).await?;
         let series = self.komga.get_series(&book.series_id, cookie).await?;
-        let contains_tag = book.metadata.tags.contains(upscale_tag) || series.metadata.tags.contains(upscale_tag);
+        let contains_tag = book.metadata.tags.iter().chain(series.metadata.tags.iter())
+            .map(|el| Ascii::new(el))
+            .any(|el| el == upscale_tag);
+
         self.cache.insert(book_id.to_string(), contains_tag).await;
 
         Ok(contains_tag)
     }
 
-    async fn check_kavita_tags(&self, upscale_tag: &String, book_id: &str, cookie: &str) -> Result<bool, HttpError> {
-        let book = self.komga.get_book(book_id, cookie).await?;
-        let series = self.komga.get_series(&book.series_id, cookie).await?;
-        let contains_tag = book.metadata.tags.contains(upscale_tag) || series.metadata.tags.contains(upscale_tag);
-        self.cache.insert(book_id.to_string(), contains_tag).await;
+    async fn check_kavita_tags(&self, upscale_tag: &String, chapter_id: &u32, auth: &str) -> Result<bool, HttpError> {
+        let upscale_tag = Ascii::new(upscale_tag);
+        let chapter = self.kavita.get_chapter(chapter_id, auth).await?;
+        let volume = self.kavita.get_volume(&chapter.volume_id, auth).await?;
+        let series_metadata = self.kavita.get_series_metadata(&volume.series_id, auth).await?;
+        let contains_tag = series_metadata.tags.iter()
+            .map(|tag| &tag.title)
+            .any(|tag| Ascii::new(tag) == upscale_tag);
+
+        self.cache.insert(chapter_id.to_string(), contains_tag).await;
 
         Ok(contains_tag)
     }

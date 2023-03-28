@@ -46,6 +46,25 @@ pub async fn upscale_kavita(
     State(state): State<AppState>,
     req: Request<Body>,
 ) -> Result<Response<Body>, StatusCode> {
+    // let uri = req.uri().clone();
+    // let auth = req.headers().get("Authorization")
+    //     .ok_or(StatusCode::BAD_REQUEST)?
+    //     .clone();
+    //
+    // let tag_checker = state.upscale_tag_checker.clone();
+    //
+    // let upscale_condition = || async {
+    //     let chapter_id = uri.query().unwrap().split("&")
+    //         .flat_map(|param| param.split("="))
+    //         .collect::<Vec<&str>>()
+    //         .windows(2)
+    //         .find(|path| path[0] == "chapterId")
+    //         .map(|path| path[1])
+    //         .map(|id| id.parse::<u32>().unwrap())
+    //         .unwrap();
+    //     tag_checker.kavita_contains_upscale_tag(&chapter_id, auth.to_str().unwrap()).await
+    // };
+    // upscale(state, req, upscale_condition).await
     upscale(state, req, || async { Ok(true) }).await
 }
 
