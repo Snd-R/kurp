@@ -21,6 +21,7 @@ RUN apt-get update && apt-get -y install locales  \
     && mv realcugan-ncnn-vulkan/models/* ./models \
     && rm -rf waifu2x-ncnn-vulkan \
     && rm -rf realcugan-ncnn-vulkan \
+    && apt-get -y remove wget unzip git \
     && apt-get -y autoremove \
     && apt-get clean
 
