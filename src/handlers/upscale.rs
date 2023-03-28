@@ -11,6 +11,7 @@ use image::ImageFormat;
 use log::info;
 use moka::future::Cache;
 use once_cell::sync::Lazy;
+use ractor::{ActorRef, call};
 use regex::Regex;
 use unicase::Ascii;
 
@@ -18,7 +19,7 @@ use crate::app_state::AppState;
 use crate::http_compression;
 use crate::http_compression::{Algorithm, compress};
 use crate::models::errors::HttpError;
-use crate::upscaler::upscale_actor::UpscaleActorHandle;
+use crate::upscaler::upscale_actor::{UpscaleSupervisorActor, UpscaleSupervisorMessage};
 
 pub async fn upscale_komga(
     State(state): State<AppState>,
@@ -82,7 +83,7 @@ pub async fn upscale<F, Fut>(
 
 async fn upscale_response(
     response: Response<Body>,
-    upscaler: UpscaleActorHandle,
+    upscaler: ActorRef<UpscaleSupervisorActor>,
 ) -> Response<Body> {
     let status = response.status();
     let headers = response.headers().clone();
@@ -104,7 +105,8 @@ async fn upscale_response(
         Some(decompressed) => decompressed.await.unwrap()
     };
 
-    let (upscaled, format) = upscaler.upscale(to_upscale, image_format).await.unwrap();
+    let (upscaled, format) =
+        call!(upscaler, UpscaleSupervisorMessage::Upscale, to_upscale, image_format).unwrap();
 
     let body_to_compress = upscaled.clone();
     let compressed = encoding

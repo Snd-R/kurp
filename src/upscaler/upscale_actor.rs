@@ -1,105 +1,125 @@
-use std::convert::Infallible;
+use std::sync::Arc;
 
 use bytes::Bytes;
 use image::ImageFormat;
-use tokio::sync::{mpsc, oneshot};
+use log::{error, info};
+use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort, SupervisionEvent};
 
-use crate::models::errors::UpscaleError;
-use crate::upscaler::upscaler::Upscaler;
+use EnabledUpscaler::{Realcugan, Waifu2x};
 
-struct UpscaleActor {
-    receiver: mpsc::Receiver<UpscaleMessage>,
-    upscaler: Option<Box<dyn Upscaler>>,
+use crate::config::app_config::{AppConfig, EnabledUpscaler};
+use crate::upscaler::upscaler::{RealCuganUpscaler, Upscaler, Waifu2xUpscaler};
+
+pub enum UpscaleSupervisorMessage {
+    Upscale(Bytes, ImageFormat, RpcReplyPort<(Bytes, ImageFormat)>),
+    Init(Arc<AppConfig>),
+    Destroy,
 }
 
-enum UpscaleMessage {
-    Upscale {
-        image: (Bytes, ImageFormat),
-        respond_to: oneshot::Sender<Result<(Bytes, ImageFormat), UpscaleError>>,
-    },
-    Update {
-        upscaler: Box<dyn Upscaler>,
-        respond_to: oneshot::Sender<Result<(), Infallible>>,
-    },
-    Deinitialize {
-        respond_to: oneshot::Sender<Result<(), Infallible>>,
-    },
+pub enum UpscaleMessage {
+    Upscale(Bytes, ImageFormat, RpcReplyPort<(Bytes, ImageFormat)>),
 }
 
-impl UpscaleActor {
-    fn new_uninitialized(receiver: mpsc::Receiver<UpscaleMessage>) -> Self {
-        UpscaleActor { receiver, upscaler: None }
+pub struct UpscaleSupervisorActor;
+
+pub struct SupervisorState {
+    config: Option<Arc<AppConfig>>,
+    upscale_actor: Option<ActorRef<UpscaleActor>>,
+}
+
+#[async_trait::async_trait]
+impl Actor for UpscaleSupervisorActor {
+    type Msg = UpscaleSupervisorMessage;
+    type State = SupervisorState;
+    type Arguments = ();
+
+    async fn pre_start(&self, _myself: ActorRef<Self>, _args: Self::Arguments) -> Result<Self::State, ActorProcessingErr> {
+        Ok(SupervisorState { config: None, upscale_actor: None })
     }
 
-    fn handle_message(&mut self, msg: UpscaleMessage) {
-        match msg {
-            UpscaleMessage::Upscale { image, respond_to } => {
-                let (bytes, format) = image;
-
-                let result = match &self.upscaler {
-                    Some(upscaler) => { Ok(upscaler.upscale(bytes, format)) }
-                    None => { Err(UpscaleError { message: "Upscaler is not initialized".to_string() }) }
-                };
-
-                respond_to.send(result).unwrap();
+    async fn handle(&self, myself: ActorRef<Self>, message: Self::Msg, state: &mut Self::State) -> Result<(), ActorProcessingErr> {
+        match message {
+            UpscaleSupervisorMessage::Upscale(image, format, reply_to) => {
+                match &state.upscale_actor {
+                    None => { return Err(From::from("Upscale Actor is not Initialized")); }
+                    Some(upscale_actor) => {
+                        let _ = upscale_actor
+                            .send_message(UpscaleMessage::Upscale(image, format, reply_to));
+                    }
+                }
             }
 
-            UpscaleMessage::Update { upscaler, respond_to } => {
-                self.upscaler = Some(upscaler);
-                respond_to.send(Ok(())).unwrap()
+            UpscaleSupervisorMessage::Init(config) => {
+                let (upscale_actor, _) = Actor::spawn_linked(
+                    None,
+                    UpscaleActor,
+                    config.clone(),
+                    myself.into(),
+                ).await?;
+                state.config = Some(config);
+                state.upscale_actor = Some(upscale_actor);
             }
-            UpscaleMessage::Deinitialize { respond_to } => {
-                self.upscaler = None;
-                respond_to.send(Ok(())).unwrap()
+
+            UpscaleSupervisorMessage::Destroy => {
+                if state.config.is_none() && state.upscale_actor.is_none() { return Ok(()); }
+                state.upscale_actor.as_ref().unwrap().stop(None);
+                state.config = None;
+                state.upscale_actor = None;
             }
         }
+
+        Ok(())
+    }
+
+    async fn handle_supervisor_evt(&self, myself: ActorRef<Self>, message: SupervisionEvent, state: &mut Self::State) -> Result<(), ActorProcessingErr> {
+        match message {
+            SupervisionEvent::ActorPanicked(_, panic_msg) => {
+                error!("Upscale actor panicked with '{panic_msg}'");
+                info!("Restarting Upscale actor");
+                match &state.config {
+                    None => { error!("Config is not Initialized") }
+                    Some(config) => {
+                        let (upscale_actor, _) = Actor::spawn_linked(
+                            None,
+                            UpscaleActor,
+                            config.clone(),
+                            myself.into(),
+                        ).await?;
+                        state.upscale_actor = Some(upscale_actor);
+                    }
+                };
+            }
+            _ => {}
+        }
+
+        Ok(())
     }
 }
 
-async fn run_upscale_actor(mut actor: UpscaleActor) {
-    while let Some(msg) = actor.receiver.recv().await {
-        actor.handle_message(msg)
-    }
-}
+pub struct UpscaleActor;
 
-#[derive(Clone)]
-pub struct UpscaleActorHandle {
-    sender: mpsc::Sender<UpscaleMessage>,
-}
+#[async_trait::async_trait]
+impl Actor for UpscaleActor {
+    type Msg = UpscaleMessage;
+    type State = Box<dyn Upscaler>;
+    type Arguments = Arc<AppConfig>;
 
-impl UpscaleActorHandle {
-    pub fn new() -> Self {
-        let (sender, receiver) = mpsc::channel(100);
-        let actor = UpscaleActor::new_uninitialized(receiver);
-        tokio::spawn(run_upscale_actor(actor));
-
-        Self { sender }
-    }
-
-    pub async fn upscale(&self, image: Bytes, format: ImageFormat) -> Result<(Bytes, ImageFormat), UpscaleError> {
-        let (send, recv) = oneshot::channel();
-        let msg = UpscaleMessage::Upscale {
-            image: (image, format),
-            respond_to: send,
+    async fn pre_start(&self, _myself: ActorRef<Self>, args: Self::Arguments) -> Result<Self::State, ActorProcessingErr> {
+        let upscaler: Box<dyn Upscaler> = match args.upscaler {
+            Waifu2x => Box::new(Waifu2xUpscaler::new(args.clone())),
+            Realcugan => Box::new(RealCuganUpscaler::new(args.clone()))
         };
 
-        let _ = self.sender.send(msg).await;
-        recv.await.expect("Actor task has been killed")
+        Ok(upscaler)
     }
 
+    async fn handle(&self, _myself: ActorRef<Self>, message: Self::Msg, state: &mut Self::State) -> Result<(), ActorProcessingErr> {
+        match message {
+            UpscaleMessage::Upscale(image, format, reply_to) => {
+                let _ = reply_to.send(state.upscale(image, format));
+            }
+        }
 
-    pub async fn init(&self, upscaler: Box<dyn Upscaler>) {
-        let (send, recv) = oneshot::channel();
-        let msg = UpscaleMessage::Update { upscaler, respond_to: send };
-        let _ = self.sender.send(msg).await;
-
-        let _ = recv.await.expect("Actor task has been killed");
-    }
-
-    pub async fn deinitialize(&self) {
-        let (send, recv) = oneshot::channel();
-        let _ = self.sender.send(UpscaleMessage::Deinitialize { respond_to: send }).await;
-
-        let _ = recv.await.expect("Actor task has been killed");
+        Ok(())
     }
 }

@@ -2,25 +2,22 @@
 
 use std::str::FromStr;
 use std::sync::Arc;
-use hyper::Uri;
 
+use hyper::Uri;
 use log::LevelFilter;
 use moka::future::Cache;
+use ractor::Actor;
 use reqwest::redirect::Policy;
 use tokio::sync::broadcast;
-
-use EnabledUpscaler::Realcugan;
 
 use crate::app_state::AppState;
 use crate::clients::kavita_client::KavitaClient;
 use crate::clients::komga_client::KomgaClient;
 use crate::clients::proxy_client::ProxyClient;
 use crate::clients::websocket_proxy_client::WebsocketProxyClient;
-use crate::config::app_config::{AppConfig, EnabledUpscaler};
-use crate::config::app_config::EnabledUpscaler::Waifu2x;
+use crate::config::app_config::AppConfig;
 use crate::tags_provider::UpscaleTagChecker;
-use crate::upscaler::upscale_actor::UpscaleActorHandle;
-use crate::upscaler::upscaler::{RealCuganUpscaler, Upscaler, Waifu2xUpscaler};
+use crate::upscaler::upscale_actor::{UpscaleSupervisorActor, UpscaleSupervisorMessage};
 
 mod config;
 mod upscaler;
@@ -40,18 +37,17 @@ async fn main() {
         .parse_default_env()
         .init();
 
-    let upscale_actor = UpscaleActorHandle::new();
+    let (upscale_actor, _) = Actor::spawn(None, UpscaleSupervisorActor, ())
+        .await
+        .expect("Failed to start Upscale Actor!");
+
     loop {
-        upscale_actor.deinitialize().await;
-
+        upscale_actor.send_message(UpscaleSupervisorMessage::Destroy)
+            .expect("Failed to send Upscaler Destroy message");
         let config = Arc::new(AppConfig::new().unwrap());
+        upscale_actor.send_message(UpscaleSupervisorMessage::Init(config.clone()))
+            .expect("Failed to send Upscaler Init message");
 
-        let upscaler: Box<dyn Upscaler> = match config.upscaler {
-            Waifu2x => Box::new(Waifu2xUpscaler::new(config.clone())),
-            Realcugan => Box::new(RealCuganUpscaler::new(config.clone()))
-        };
-
-        upscale_actor.init(upscaler).await;
         let (tx, graceful_shutdown_rx) = broadcast::channel::<()>(10);
 
         let reqwest_client = reqwest::Client::builder()
