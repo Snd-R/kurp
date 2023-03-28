@@ -1,6 +1,6 @@
 # Komga and Kavita upscaling reverse proxy
 
-Reverse proxy that intercepts page image requests and applies upscaling. Other requests are transparently proxied
+Reverse proxy that intercepts image requests and applies upscaling. Other requests are transparently proxied
 without noticable delay
 
 ## Building
@@ -31,7 +31,7 @@ port: 3030 # listen port
 upstream_url: "http://localhost:8080" # Komga or Kavita url
 allow_config_updates: false # exposes config get and update enpoints that allow runtime config updates
 upscale: true # enable upscaling
-upscale_tag: null # if not null will only upscale if book or series contains specified tag. Komga only
+upscale_tag: # if present will only upscale if book or series contains specified tag. Komga only
 size_threshold_enabled: true # enables content size check
 size_threshold: 500 # in KB. will not upscale if image size is bigger than specified size
 size_threshold_png: 1000 # in KB. will not upscale if image size is bigger than specified size. PNG only
@@ -63,4 +63,29 @@ realcugan:
   num_threads: 2 #  thread count for upscaling
   models_path: "./models" # path to directory with models
 
+```
+
+## Docker Compose
+
+```yml
+version: "3.7"
+services:
+  kurp:
+    container_name: kurp
+    image: sndxr/kurp:latest
+    user: "1000:1000"
+    # optional env configuration
+    environment: 
+      - RUST_LOG=info
+      - KURP_UPSTREAM_URL=http://kavita:5000
+      - KURP_UPSCALER=Waifu2x
+      - KURP_WAIFU2X.GPUID=0
+    volumes:
+      - ./upscale-proxy:/config
+    ports:
+      - 3030:3030
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+      - /dev/dri/card0:/dev/dri/card0
+    restart: unless-stopped
 ```
