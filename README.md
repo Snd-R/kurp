@@ -29,7 +29,9 @@ with `KURP_CONF_DIR` environment variable. If no config file is found then defau
 ```yaml
 port: 3030 # listen port
 upstream_url: "http://localhost:8080" # Komga or Kavita url
+allow_config_updates: false # exposes config get and update enpoints that allow runtime config updates
 upscale: true # enable upscaling
+upscale_tag: null # if not null will only upscale if book or series contains specified tag. Komga only
 size_threshold_enabled: true # enables content size check
 size_threshold: 500 # in KB. will not upscale if image size is bigger than specified size
 size_threshold_png: 1000 # in KB. will not upscale if image size is bigger than specified size. PNG only
