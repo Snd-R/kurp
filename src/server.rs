@@ -19,7 +19,7 @@ pub async fn start(state: AppState, mut shutdown_rx: Receiver<()>) {
 
     let routes = make_routes(state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     let server = axum::Server::bind(&addr)
         .serve(routes.into_make_service())
         .with_graceful_shutdown(async move { shutdown_rx.recv().await.unwrap() });

@@ -26,7 +26,7 @@ impl UpscaleTagChecker {
 
     pub async fn kavita_contains_upscale_tag(&self, book_id: &u32, auth: &str) -> Result<bool, HttpError> {
         match &self.upscale_tag {
-            None => Ok(false),
+            None => Ok(true),
             Some(upscale_tag) => {
                 match self.cache.get(&book_id.to_string()) {
                     None => Ok(self.check_kavita_tags(upscale_tag, book_id, auth).await?),
@@ -38,7 +38,7 @@ impl UpscaleTagChecker {
 
     pub async fn komga_contains_upscale_tag(&self, book_id: &str, cookie: &str) -> Result<bool, HttpError> {
         match &self.upscale_tag {
-            None => Ok(false),
+            None => Ok(true),
             Some(upscale_tag) => {
                 match self.cache.get(book_id) {
                     None => Ok(self.check_komga_tags(upscale_tag, book_id, cookie).await?),
