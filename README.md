@@ -81,7 +81,7 @@ services:
       - KURP_UPSCALER=Waifu2x
       - KURP_WAIFU2X.GPUID=0
     volumes:
-      - ./upscale-proxy:/config
+      - ./kurp:/config
     ports:
       - 3030:3030
     devices:
