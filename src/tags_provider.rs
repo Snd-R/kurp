@@ -96,4 +96,8 @@ impl UpscaleTagChecker {
 
         Ok(contains_tag)
     }
+
+    pub fn invalidate_cache(&self) {
+        self.cache.invalidate_all()
+    }
 }

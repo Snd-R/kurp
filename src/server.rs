@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use axum::Router;
-use axum::routing::{any, get, post};
+use axum::routing::{any, get, patch, post};
 use futures::FutureExt;
 use log::info;
 use tokio::sync::broadcast::Receiver;
@@ -10,7 +10,8 @@ use tokio::time::sleep;
 
 use crate::app_state::AppState;
 use crate::handlers::config::{get_config, update_config};
-use crate::handlers::proxy::{proxy_handler, kavita_ws_proxy_handler};
+use crate::handlers::komga::{check_tags_on_book_metadata_update, check_tags_on_series_metadata_update};
+use crate::handlers::proxy::{kavita_ws_proxy_handler, proxy_handler};
 use crate::handlers::upscale::{upscale_kavita, upscale_komga};
 
 pub async fn start(state: AppState, mut shutdown_rx: Receiver<()>) {
@@ -42,6 +43,12 @@ fn make_routes(state: AppState) -> Router {
         .route("/hubs/messages", get(kavita_ws_proxy_handler))
         .route("/", any(proxy_handler))
         .route("/*any", any(proxy_handler));
+
+    if let Some(_) = &config.upscale_tag {
+        routes = routes
+            .route("/api/v1/series/:series_id/metadata", patch(check_tags_on_series_metadata_update))
+            .route("/api/v1/books/:book_id/metadata", patch(check_tags_on_book_metadata_update))
+    }
 
     if config.allow_config_updates {
         routes = routes

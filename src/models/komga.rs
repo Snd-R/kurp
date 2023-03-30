@@ -12,6 +12,11 @@ pub struct KomgaSeriesMetadata {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct KomgaSeriesMetadataUpdate {
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct KomgaBook {
     pub id: String,
     #[serde(rename = "seriesId")]
@@ -22,4 +27,9 @@ pub struct KomgaBook {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct KomgaBookMetadata {
     pub tags: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct KomgaBookMetadataUpdate {
+    pub tags: Option<Vec<String>>,
 }
