@@ -50,6 +50,11 @@ impl Actor for UpscaleSupervisorActor {
             }
 
             UpscaleSupervisorMessage::Init(config) => {
+                match &state.upscale_actor {
+                    Some(actor) => actor.stop(None),
+                    None => {}
+                }
+
                 let (upscale_actor, _) = Actor::spawn_linked(
                     None,
                     UpscaleActor,
