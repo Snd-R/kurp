@@ -64,11 +64,11 @@ impl KomgaClient {
         auth: Option<Authorization<Basic>>,
     ) -> Result<HeaderMap, HttpError> {
         let mut headers = HeaderMap::new();
-        match cookie {
-            Some(cookie) => { headers.typed_insert(cookie) }
+        match auth {
+            Some(auth) => { headers.typed_insert(auth) }
             None => {
-                match auth {
-                    Some(auth) => { headers.typed_insert(auth) }
+                match cookie {
+                    Some(cookie) => { headers.typed_insert(cookie) }
                     None => { return Err(HttpError { message: "No auth header".to_string() }); }
                 }
             }
