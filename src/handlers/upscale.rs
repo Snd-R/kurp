@@ -4,7 +4,10 @@ use std::sync::Arc;
 
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, Request, Response, StatusCode};
+use axum::TypedHeader;
 use bytes::Bytes;
+use headers::{Authorization, Cookie};
+use headers::authorization::Basic;
 use hyper::Body;
 use hyper::body::to_bytes;
 use image::ImageFormat;
@@ -23,20 +26,21 @@ use crate::upscaler::upscale_actor::{UpscaleSupervisorActor, UpscaleSupervisorMe
 
 pub async fn upscale_komga(
     State(state): State<AppState>,
+    authorization: Option<TypedHeader<Authorization<Basic>>>,
+    cookie: Option<TypedHeader<Cookie>>,
     req: Request<Body>,
 ) -> Result<Response<Body>, StatusCode> {
     let uri = req.uri().clone();
     let tag_checker = state.upscale_tag_checker.clone();
-    let cookie = req.headers().get("Cookie")
-        .ok_or(StatusCode::BAD_REQUEST)?
-        .clone();
+    let cookie = cookie.map(|c| c.0);
+    let auth = authorization.map(|a| a.0);
 
     let upscale_condition = || async {
         let book_id = uri.path().split("/").collect::<Vec<&str>>().windows(2)
             .find(|path| path[0] == "books")
             .map(|path| path[1])
             .unwrap();
-        tag_checker.komga_contains_upscale_tag(book_id, cookie.to_str().unwrap()).await
+        tag_checker.komga_contains_upscale_tag(book_id, cookie, auth).await
     };
 
     upscale(state, req, upscale_condition).await
@@ -46,25 +50,6 @@ pub async fn upscale_kavita(
     State(state): State<AppState>,
     req: Request<Body>,
 ) -> Result<Response<Body>, StatusCode> {
-    // let uri = req.uri().clone();
-    // let auth = req.headers().get("Authorization")
-    //     .ok_or(StatusCode::BAD_REQUEST)?
-    //     .clone();
-    //
-    // let tag_checker = state.upscale_tag_checker.clone();
-    //
-    // let upscale_condition = || async {
-    //     let chapter_id = uri.query().unwrap().split("&")
-    //         .flat_map(|param| param.split("="))
-    //         .collect::<Vec<&str>>()
-    //         .windows(2)
-    //         .find(|path| path[0] == "chapterId")
-    //         .map(|path| path[1])
-    //         .map(|id| id.parse::<u32>().unwrap())
-    //         .unwrap();
-    //     tag_checker.kavita_contains_upscale_tag(&chapter_id, auth.to_str().unwrap()).await
-    // };
-    // upscale(state, req, upscale_condition).await
     upscale(state, req, || async { Ok(true) }).await
 }
 

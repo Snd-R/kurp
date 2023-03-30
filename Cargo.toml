@@ -28,6 +28,7 @@ async-trait = "0.1.68"
 config = { version = "0.13.3", features = ["yaml"] }
 bytes = "1.4.0"
 image = { version = "0.24.5", features = ["jpeg", "png", "webp", "webp-encoder", "gif"] }
+headers = "0.3.8"
 once_cell = "1.10"
 moka = { version = "0.10", features = ["future"] }
 ractor = "0.7.5"

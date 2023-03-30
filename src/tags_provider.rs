@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use headers::{Authorization, Cookie};
+use headers::authorization::{Basic, Bearer};
 use moka::future::Cache;
 use unicase::Ascii;
 
@@ -24,7 +26,11 @@ impl UpscaleTagChecker {
         Self { upscale_tag, komga, kavita, cache }
     }
 
-    pub async fn kavita_contains_upscale_tag(&self, book_id: &u32, auth: &str) -> Result<bool, HttpError> {
+    pub async fn kavita_contains_upscale_tag(
+        &self,
+        book_id: &u32,
+        auth: Authorization<Bearer>,
+    ) -> Result<bool, HttpError> {
         match &self.upscale_tag {
             None => Ok(true),
             Some(upscale_tag) => {
@@ -36,22 +42,33 @@ impl UpscaleTagChecker {
         }
     }
 
-    pub async fn komga_contains_upscale_tag(&self, book_id: &str, cookie: &str) -> Result<bool, HttpError> {
+    pub async fn komga_contains_upscale_tag(
+        &self,
+        book_id: &str,
+        cookie: Option<Cookie>,
+        auth: Option<Authorization<Basic>>,
+    ) -> Result<bool, HttpError> {
         match &self.upscale_tag {
             None => Ok(true),
             Some(upscale_tag) => {
                 match self.cache.get(book_id) {
-                    None => Ok(self.check_komga_tags(upscale_tag, book_id, cookie).await?),
+                    None => Ok(self.check_komga_tags(upscale_tag, book_id, cookie, auth).await?),
                     Some(contains) => Ok(contains)
                 }
             }
         }
     }
 
-    async fn check_komga_tags(&self, upscale_tag: &String, book_id: &str, cookie: &str) -> Result<bool, HttpError> {
+    async fn check_komga_tags(
+        &self,
+        upscale_tag: &String,
+        book_id: &str,
+        cookie: Option<Cookie>,
+        auth: Option<Authorization<Basic>>,
+    ) -> Result<bool, HttpError> {
         let upscale_tag = Ascii::new(upscale_tag);
-        let book = self.komga.get_book(book_id, cookie).await?;
-        let series = self.komga.get_series(&book.series_id, cookie).await?;
+        let book = self.komga.get_book(book_id, cookie.clone(), auth.clone()).await?;
+        let series = self.komga.get_series(&book.series_id, cookie, auth).await?;
         let contains_tag = book.metadata.tags.iter().chain(series.metadata.tags.iter())
             .map(|el| Ascii::new(el))
             .any(|el| el == upscale_tag);
@@ -61,10 +78,15 @@ impl UpscaleTagChecker {
         Ok(contains_tag)
     }
 
-    async fn check_kavita_tags(&self, upscale_tag: &String, chapter_id: &u32, auth: &str) -> Result<bool, HttpError> {
+    async fn check_kavita_tags(
+        &self,
+        upscale_tag: &String,
+        chapter_id: &u32,
+        auth: Authorization<Bearer>,
+    ) -> Result<bool, HttpError> {
         let upscale_tag = Ascii::new(upscale_tag);
-        let chapter = self.kavita.get_chapter(chapter_id, auth).await?;
-        let volume = self.kavita.get_volume(&chapter.volume_id, auth).await?;
+        let chapter = self.kavita.get_chapter(chapter_id, auth.clone()).await?;
+        let volume = self.kavita.get_volume(&chapter.volume_id, auth.clone()).await?;
         let series_metadata = self.kavita.get_series_metadata(&volume.series_id, auth).await?;
         let contains_tag = series_metadata.tags.iter()
             .map(|tag| &tag.title)
